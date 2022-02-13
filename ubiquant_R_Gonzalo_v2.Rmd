@@ -1,0 +1,147 @@
+---
+title: "ubiquant-market-prediction"
+output: html_document
+---
+
+
+# Libraries
+```{r}
+require(data.table);t1<-Sys.time()
+require(ggplot2)
+require(factoextra)
+require(heatmaply)
+require(forecast)
+require(tidyr)
+require(corrplot)
+require(keras)
+require(tensorflow)
+require(dplyr)
+library(tfdatasets)
+```
+
+# Introduction
+
+## reading data
+```{r}
+require(data.table)
+#startTime <- Sys.time();
+#Original data
+#data<-fread("C:/Users/gdiaz/Desktop/GDA/kaggle/ubiquant_market/ubiquant-market-prediction/train.csv", header = T)
+#Sample data
+#sample<-tail(data, n = 5000)
+sample<-fread("C:/Users/gdiaz/Desktop/GDA/kaggle/ubiquant_market/ubiquant-market-prediction/sample.csv", header = T)
+#endTime<-Sys.time()
+#print(endTime-startTime)
+
+```
+
+
+## Study of the last time series
+
+```{r}
+x<-sample$target
+modelo<-auto.arima(x)
+
+summary(modelo)
+pronostico<- forecast(modelo,100,level=95)
+plot(pronostico)
+```
+
+
+# Split train/test set
+```{r}
+train<-sample[c(1:4000),]
+test<-sample[c(4001:5000),]
+
+```
+
+
+
+# Deep Learning solution
+
+## train test split
+
+
+```{r}
+
+X_train<-train[,-c(1:4)]
+y_train<-train[,4]
+
+X_test<-test[,-c(1:4)]
+y_test<-test[,4]
+
+```
+
+
+
+## Model fit and train
+
+
+```{r}
+#Try to use using
+set.seed(123)
+
+X<-X_train
+train.x<-as.matrix(X)
+#Normalize train.x
+norm<-function(x){
+  #return((x-mean(x))/sd(x))
+  return((x-min(x))/(max(x)-min(x)))
+}
+
+invisible(apply(train.x,2,norm))
+
+train.y<-as.matrix((y_train[,1]))
+train.y<-as.double(train.y)
+#train.y norm too
+
+model<-keras_model_sequential()
+model %>%
+  layer_dense(units=300,activation="relu",input_shape = c(ncol(train.x)),kernel_regularizer = regularizer_l1_l2(l1 = 0.001, l2 = 0.001),)%>%
+  layer_dropout(rate=0.5)%>%
+  layer_dense(units=ceiling(ncol(train.x)*0.75),activation="relu",kernel_regularizer = regularizer_l1_l2(l1 = 0.001, l2 = 0.001),)%>%
+  layer_dense(units=ceiling(ncol(train.x)*0.65),activation="relu")%>%
+  layer_dropout(rate=0.5)%>%
+  layer_dense(units=ceiling(ncol(train.x)*0.45),activation="relu")%>%
+  layer_dropout(rate=0.5)%>%
+  layer_dense(units=ceiling(ncol(train.x)*0.25),activation="relu")%>%
+  layer_dropout(rate=0.5)%>%
+  layer_dense(units=ceiling(ncol(train.x)*0.1),activation="relu")%>%
+  layer_dropout(rate=0.5)%>%
+  layer_dense(units=1,activation="linear")
+model%>%compile(optimizer="adam",loss='mse',metrics=c("mean_absolute_error"))
+print(model)
+history<-model%>%fit(train.x,train.y,epochs=100,batch_size=20,validation_split=0.2,verbose=2)
+plot(history)
+```
+
+## Predicting test data
+```{r}
+
+test.x<-as.matrix(X_test)
+#test.x<-as.matrix(y_test[,c(2:301)])
+#Normalize train.x
+
+invisible(apply(test.x,2,norm))
+
+test.y<-as.matrix((y_test[,1]))
+test.y<-as.double(test.y)
+
+
+y_pred = model %>% predict(test.x)
+```
+
+## plotting the reult and correlation
+
+```{r}
+x_axes = seq(1:length(y_pred))
+plot(x_axes, test.y, col="red", type="l")
+lines(x_axes, y_pred, col="blue")
+legend("topleft", legend=c("y-original", "y-predicted"),
+        col=c("red", "blue"), lty=1,cex=0.8)
+
+cor.test(test.y,y_pred);t2<-Sys.time()
+print(t2-t1)
+```
+
+
